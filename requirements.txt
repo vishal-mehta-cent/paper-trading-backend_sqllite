@@ -7,3 +7,4 @@ google-auth
 gunicorn
 sqlalchemy
 PyJWT
+requests
