@@ -32,10 +32,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://www.neurocrest.in",   # ✅ Your Vercel frontend
-        "http://localhost:5173"        # ✅ Vite dev server
-    ],
+    allow_origins=["*"],       # ✅ Vite dev server
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
