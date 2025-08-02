@@ -25,14 +25,23 @@ init()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Create app instance
 app = FastAPI(
     title="Paper Trading Backend",
     version="1.0.0"
 )
 
+# Allowed origins for frontend (local and production)
+origins = [
+    "http://localhost:5173",  # 🔧 Vite dev server (local)
+    "https://paper-trading-frontend.vercel.app",  # ✅ Your Vercel production frontend
+    "https://www.neurocrest.in"  # Optional: if mapped to your Vercel project
+]
+
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # ✅ Vite dev server
+    allow_origins=origins,     # ✅ Only trusted domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
