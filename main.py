@@ -33,7 +33,9 @@ app = FastAPI(
 # 4) CORS to allow frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        # Allow all origins (frontend access)
+    allow_origins=["https://www.neurocrest.in",     # ✅ Production domain
+    "http://localhost:5173"   
+    ],        # Allow all origins (frontend access)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
