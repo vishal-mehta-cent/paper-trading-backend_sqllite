@@ -30,17 +30,16 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# 4) CORS to allow frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://www.neurocrest.in",     # ✅ Production domain
-    "http://localhost:5173"   
-    ],        # Allow all origins (frontend access)
+    allow_origins=[
+        "https://www.neurocrest.in",   # ✅ Your Vercel frontend
+        "http://localhost:5173"        # ✅ Vite dev server
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # 5) Import all routers
 from app.routers.auth         import router as auth_router
 from app.routers.search       import router as search_router
