@@ -1,5 +1,5 @@
 # Backend/app/routers/auth_google.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from google.oauth2 import id_token
 from google.auth.transport import requests
@@ -7,37 +7,34 @@ import sqlite3
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"  # Replace this
+GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"  # Replace
 
 class GoogleToken(BaseModel):
     token: str
 
 @router.post("/google-login")
 async def google_login(data: GoogleToken):
+    token = data.get("token")
     try:
-        # ✅ Verify token from frontend
         idinfo = id_token.verify_oauth2_token(
             data.token, requests.Request(), GOOGLE_CLIENT_ID
         )
 
-        email = idinfo.get("email")
+        email = idinfo["email"]
         name = idinfo.get("name", "")
-        sub = idinfo.get("sub")  # Unique Google ID
-
-        if not email:
-            raise HTTPException(status_code=400, detail="Invalid token: email missing")
+        sub = idinfo["sub"]  # Google unique user ID
 
         conn = sqlite3.connect("paper_trading.db")
         c = conn.cursor()
 
-        # ✅ Ensure users table exists
+        # Create table if not exists
         c.execute("""CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password TEXT,
             email TEXT
         )""")
 
-        # ✅ Register user if not already present
+        # Register user if not exists
         c.execute("SELECT * FROM users WHERE username = ?", (email,))
         if not c.fetchone():
             c.execute("INSERT INTO users (username, password, email) VALUES (?, ?, ?)",
@@ -45,13 +42,7 @@ async def google_login(data: GoogleToken):
         conn.commit()
         conn.close()
 
-        return {
-            "success": True,
-            "message": f"Google login successful for {email}",
-            "username": email
-        }
+        return {"status": "success", "username": email}
 
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid or expired Google token")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Google login failed: {str(e)}")
+        raise HTTPException(status_code=401, detail="Google login failed")
