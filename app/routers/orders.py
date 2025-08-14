@@ -209,6 +209,8 @@ class OrderData(BaseModel):
     price: Optional[float] = None     # trigger price for LIMIT; 0/None => market BUY
     exchange: Optional[str] = "NSE"
     segment: Optional[str] = "intraday"   # intraday / delivery
+    # Optional from UI; we don't need it but it's harmless to accept
+    order_mode: Optional[str] = None       # MARKET / LIMIT (ignored by backend; inferred from price)
 
 class ModifyOrder(BaseModel):
     qty: int
@@ -270,7 +272,9 @@ def place_order(order: OrderData):
 
             _insert_closed(c, order.username, script, order.order_type, qty, trade_px, seg)
             conn.commit()
-            return {"success": True, "message": "EXECUTED", "triggered": True, "segment": seg}
+            # 🔔 Exact messages for your popup
+            msg = "Buy successfully" if side_buy else "Sell successfully"
+            return {"success": True, "message": msg, "triggered": True, "segment": seg}
         else:
             # Place as Open; block funds for BUY so we can refund later
             if side_buy:
@@ -291,7 +295,8 @@ def place_order(order: OrderData):
                 _now_ist().strftime("%Y-%m-%d %H:%M:%S"),
             ))
             conn.commit()
-            return {"success": True, "message": "PLACED", "triggered": False, "segment": seg}
+            # 🔔 Exact message for open (limit) orders
+            return {"success": True, "message": "Order is placed", "triggered": False, "segment": seg}
     except HTTPException:
         conn.rollback()
         raise
@@ -327,8 +332,9 @@ def get_open_orders(username: str):
                 "qty": int(qty),
                 "trigger_price": float(trig),
                 "live_price": live,
-                "created": dt,
+                "datetime": dt,                # ✅ matches UI (not "created")
                 "segment": seg,
+                "status": "Open",
                 "status_msg": f"Yet to trigger, ₹{abs(live - float(trig)):.2f} away"
             })
         return out
