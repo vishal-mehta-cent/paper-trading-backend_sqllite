@@ -9,3 +9,6 @@ sqlalchemy
 PyJWT
 requests
 yfinance
+pytz
+apscheduler
+

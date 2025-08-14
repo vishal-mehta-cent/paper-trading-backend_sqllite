@@ -40,14 +40,12 @@ def init():
 
     # ✅ Create portfolio table
     c.execute("""
-    CREATE TABLE IF NOT EXISTS portfolio (
+    CREATE TABLE IF NOT EXISTS portfolio (   
       username TEXT NOT NULL,
       script TEXT NOT NULL,
       qty INTEGER NOT NULL,
-      avg_buy_price REAL NOT NULL,
-      current_price REAL NOT NULL,
-      PRIMARY KEY(username, script)
-    )
+      avg_buy_price REAL NOT NULL
+    );
     """)
 
     # ✅ Create watchlist table
@@ -59,39 +57,54 @@ def init():
     )
     """)
 
-    # ✅ Create separate funds table (NEW)
+    # ✅ Create separate funds table
     c.execute("""
     CREATE TABLE IF NOT EXISTS funds (
-    username TEXT PRIMARY KEY,
-    total_amount REAL DEFAULT 0,
-    available_amount REAL DEFAULT 0
+      username TEXT PRIMARY KEY,
+      total_amount REAL DEFAULT 0,
+      available_amount REAL DEFAULT 0
     )
-  """)
-    # Feedback table
+    """)
+
+    # ✅ Create feedback table
     c.execute("""
     CREATE TABLE IF NOT EXISTS feedback (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    message TEXT NOT NULL,
-    datetime TEXT
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      message TEXT NOT NULL,
+      datetime TEXT
     )
-  """)
+    """)
 
-# Contact table
+    # ✅ Create contact table
     c.execute("""
     CREATE TABLE IF NOT EXISTS contact (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    phone TEXT,
-    subject TEXT,
-    message TEXT,
-    datetime TEXT
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT,
+      subject TEXT,
+      message TEXT,
+      datetime TEXT
     )
-  """)
+    """)
 
-    
-      # ✅ Safe migration for stoploss and target
+    # ✅ Create closed_trades table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS closed_trades (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT,
+      script TEXT,
+      qty INTEGER,
+      buy_price REAL,
+      sell_price REAL,
+      buy_time TEXT,
+      sell_time TEXT,
+      pnl REAL
+    )
+    """)
+
+    # ✅ Safe migration for stoploss and target
     existing_columns = [col[1] for col in c.execute("PRAGMA table_info(orders)").fetchall()]
     
     if "stoploss" not in existing_columns:

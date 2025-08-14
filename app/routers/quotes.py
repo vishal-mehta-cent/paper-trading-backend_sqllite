@@ -53,3 +53,9 @@ async def get_quotes(symbols: str):
                 "error": str(e)
             })
     return out
+
+@router.get("/live/{symbol}")
+def live(symbol: str):
+    # Replace with your websocket/redis cache price
+    # Here we just return a dummy number to let the UI work
+    return {"symbol": symbol.upper(), "price": 3391.00}

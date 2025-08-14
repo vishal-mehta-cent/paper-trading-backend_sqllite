@@ -1,98 +1,91 @@
 from fastapi import APIRouter, HTTPException
 import sqlite3
-from datetime import datetime
-from typing import List
+from datetime import datetime, time
 import yfinance as yf
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
-
 @router.get("/{username}")
 def get_portfolio(username: str):
-    conn = sqlite3.connect("paper_trading.db")
-    c = conn.cursor()
-
-    # ✅ Fetch real portfolio
-    c.execute("""
-        SELECT script, qty, avg_buy_price
-        FROM portfolio
-        WHERE username = ?
-    """, (username,))
     open_positions = []
-    for row in c.fetchall():
-        symbol, qty, avg = row
-        try:
-            current = yf.Ticker(symbol).fast_info.last_price
-        except:
-            current = avg
-        pnl = (current - avg) * qty
-        open_positions.append({
-            "symbol": symbol,
-            "qty": qty,
-            "avg_price": avg,
-            "current_price": current,
-            "pnl": round(pnl, 2)
-        })
-
-    # ✅ Closed trades from orders
-    c.execute("""
-        SELECT script, order_type, qty, price, status, datetime, pnl
-        FROM orders
-        WHERE username = ? AND status = 'Closed'
-    """, (username,))
     closed_trades = []
-    for row in c.fetchall():
-        symbol, order_type, qty, price, status, dt, pnl = row
-        closed_trades.append({
-            "symbol": symbol,
-            "order_type": order_type,
-            "qty": qty,
-            "price": price,
-            "status": status,
-            "datetime": dt,
-            "pnl": round(pnl, 2) if pnl is not None else 0.0
-        })
 
-    conn.close()
-    return {"open": open_positions, "closed": closed_trades}
-
-
-# ✅ Endpoint to update portfolio at day end using open BUY orders
-@router.post("/update/{username}")
-def update_portfolio(username: str):
-    conn = sqlite3.connect("paper_trading.db")
-    c = conn.cursor()
+    now = datetime.now().time()
+    after_market_close = now >= time(15, 45)
 
     try:
-        # ❌ Clear dummy/old portfolio
-        c.execute("DELETE FROM portfolio WHERE username = ?", (username,))
+        with sqlite3.connect("paper_trading.db", timeout=10) as conn:
+            c = conn.cursor()
 
-        # ✅ Get open BUY orders
-        c.execute("""
-            SELECT script, qty, price
-            FROM orders
-            WHERE username = ? AND order_type = 'BUY' AND status = 'OPEN'
-        """, (username,))
-        buy_orders = c.fetchall()
-
-        # 🔁 Insert each as portfolio position
-        for symbol, qty, price in buy_orders:
-            # If already exists in portfolio, update quantity/avg (optional logic)
+            # ✅ 1. Get all open positions
             c.execute("""
-                INSERT OR REPLACE INTO portfolio (username, script, qty, avg_buy_price, current_price)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                username,
-                symbol,
-                qty,
-                price,
-                price  # default current = buy price
-            ))
+                SELECT script, qty, avg_buy_price
+                FROM portfolio
+                WHERE username = ?
+            """, (username,))
+            for row in c.fetchall():
+                symbol, qty, avg = row
+                try:
+                    current = yf.Ticker(symbol).fast_info.last_price
+                    if current is None: current = avg
+                except:
+                    current = avg
+                pnl = (current - avg) * qty
+                open_positions.append({
+                    "symbol": symbol,
+                    "qty": qty,
+                    "avg_price": avg,
+                    "current_price": current,
+                    "pnl": round(pnl, 2)
+                })
 
-        conn.commit()
-        return {"success": True, "message": "Portfolio updated successfully."}
+            # ✅ 2. Handle post-3:45 updates
+            if after_market_close:
+                c.execute("""
+                    SELECT script, order_type, qty, price, datetime, pnl
+                    FROM orders
+                    WHERE username = ? AND status = 'Closed'
+                """, (username,))
+                for symbol, otype, qty, price, dt, pnl in c.fetchall():
+                    if otype.upper() == 'BUY':
+                        c.execute("SELECT qty, avg_buy_price FROM portfolio WHERE username = ? AND script = ?", (username, symbol))
+                        exists = c.fetchone()
+
+                        if exists:
+                            old_qty, old_avg = exists
+                            new_qty = old_qty + qty
+                            new_avg = ((old_avg * old_qty) + (price * qty)) / new_qty
+
+                            c.execute("""
+                                UPDATE portfolio
+                                SET qty = ?, avg_buy_price = ?
+                                WHERE username = ? AND script = ?
+                            """, (new_qty, round(new_avg, 2), username, symbol))
+
+                        else:
+                            c.execute("""
+                                INSERT INTO portfolio (username, script, qty, avg_buy_price)
+                                VALUES (?, ?, ?, ?)
+                            """, (username, symbol, qty, price))
+
+                    elif otype.upper() == 'SELL':
+                        closed_trades.append({
+                            "symbol": symbol,
+                            "order_type": otype,
+                            "qty": qty,
+                            "price": price,
+                            "status": "Closed",
+                            "datetime": dt,
+                            "pnl": round(pnl or 0.0, 2)
+                        })
+
+                conn.commit()
+
+        return {"open": open_positions, "closed": closed_trades}
+
+    except sqlite3.OperationalError as e:
+        print("🔒 SQLite error in /portfolio:", e)
+        raise HTTPException(status_code=500, detail=f"🔒 Database error: {str(e)}")
     except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        conn.close()
+        print("❌ Error in /portfolio:", e)
+        raise HTTPException(status_code=500, detail=f"❌ Unexpected error: {str(e)}")
