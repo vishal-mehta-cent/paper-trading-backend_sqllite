@@ -40,12 +40,16 @@ def init():
 
     # ✅ Create portfolio table
     c.execute("""
-    CREATE TABLE IF NOT EXISTS portfolio (   
-      username TEXT NOT NULL,
-      script TEXT NOT NULL,
-      qty INTEGER NOT NULL,
-      avg_buy_price REAL NOT NULL
-    );
+    CREATE TABLE IF NOT EXISTS portfolio (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    script TEXT,
+    qty INTEGER,
+    avg_price REAL,
+    datetime TEXT,
+    stoploss REAL,
+    target REAL
+    )
     """)
 
     # ✅ Create watchlist table

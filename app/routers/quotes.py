@@ -1,9 +1,11 @@
-
 # Backend/app/routers/quotes.py
 import yfinance as yf
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/quotes", tags=["quotes"])
+
+MANUAL_PRICE = 28
+MANUAL = 1
 
 def map_symbol(symbol: str) -> str:
     symbol = symbol.upper()
@@ -29,18 +31,27 @@ async def get_quotes(symbols: str):
             mapped = map_symbol(sym)
             tk = yf.Ticker(mapped)
             info = tk.fast_info
-            price = info.last_price
-            prev  = info.previous_close
-            change = price - prev
-            pct    = (change/prev)*100 if prev else 0
-            exch   = info.exchange or "NSE"
+            if MANUAL == 0:
+                price = info.last_price
+            else:
+                price = MANUAL_PRICE
+                prev  = info.previous_close
+                change = price - prev
+                pct    = (change/prev)*100 if prev else 0
+                exch   = info.exchange or "NSE"
+                day_high = getattr(info, "day_high", None)
+                day_low  = getattr(info, "day_low", None)
+
+            # ✅ Add dayHigh and dayLow here
             out.append({
                 "symbol": sym,
                 "mapped_symbol": mapped,
                 "price": round(price, 2),
                 "change": round(change, 2),
                 "pct_change": round(pct, 2),
-                "exchange": exch
+                "exchange": exch,
+                "dayHigh": round(day_high, 2),
+                "dayLow": round(day_low, 2)
             })
         except Exception as e:
             out.append({
@@ -50,12 +61,8 @@ async def get_quotes(symbols: str):
                 "change": None,
                 "pct_change": None,
                 "exchange": None,
+                "dayHigh": None,
+                "dayLow": None,
                 "error": str(e)
             })
     return out
-
-@router.get("/live/{symbol}")
-def live(symbol: str):
-    # Replace with your websocket/redis cache price
-    # Here we just return a dummy number to let the UI work
-    return {"symbol": symbol.upper(), "price": 3391.00}

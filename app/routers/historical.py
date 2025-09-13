@@ -76,7 +76,6 @@ def build_history(username: str, orders: List) -> List[HistoryItem]:
             sell_price = float(o.price)
             lots = symbol_lots[sym]
 
-            # Match against existing BUY lots FIFO
             for lot in lots:
                 if sell_qty_left <= 0:
                     break
@@ -84,7 +83,6 @@ def build_history(username: str, orders: List) -> List[HistoryItem]:
                     continue
 
                 take = min(lot["remaining_qty"], sell_qty_left)
-                # Realized P&L for the matched piece
                 lot["realized_pnl"] += (sell_price - lot["buy_price"]) * take
                 lot["remaining_qty"] -= take
                 sell_qty_left -= take
@@ -99,14 +97,18 @@ def build_history(username: str, orders: List) -> List[HistoryItem]:
     for sym, lots in symbol_lots.items():
         for lot in lots:
             history_items.append(HistoryItem(
-                time=lot["time"],
-                symbol=sym,
-                buy_qty=lot["buy_qty"],
-                buy_price=lot["buy_price"],
-                pnl=round(lot["realized_pnl"], 2),
-                remaining_qty=lot["remaining_qty"],
-                is_closed=(lot["remaining_qty"] == 0)
-            ))
+            time=_fmt_time_ist(o.created_at),
+            symbol=sym,
+            buy_qty=take,
+            buy_price=lot["buy_price"],
+            pnl=round((sell_price - lot["buy_price"]) * take, 2),
+            remaining_qty=0,
+            is_closed=True,
+            # extra fields
+            sell_qty=take,
+            sell_price=sell_price,
+            exit_time=_fmt_time_ist(o.created_at)
+        ))
 
     # Sort rows by time of BUY (already mostly sorted but ensure final order)
     # If you want newest first, reverse=True

@@ -20,6 +20,7 @@
 # backend/app/routers/search.py
 # backend/app/routers/search.py
 
+# backend/app/routers/search.py
 from fastapi import APIRouter, Query
 from typing import List, Optional
 import csv
@@ -60,14 +61,26 @@ def search_scripts(q: Optional[str] = Query(None)):
         return []
 
     q_lower = q.lower()
-    results = [
-        s for s in SCRIPTS
-        if q_lower in s["symbol"].lower() or q_lower in s["name"].lower()
-    ]
-    return results[:20]  # Limit results to top 20
 
+    # --- 1. Prefix matches first ---
+    prefix_matches = [
+        s for s in SCRIPTS
+        if s["symbol"].lower().startswith(q_lower) or s["name"].lower().startswith(q_lower)
+    ]
+
+    # --- 2. Substring matches (but not already in prefix results) ---
+    substring_matches = [
+        s for s in SCRIPTS
+        if (q_lower in s["symbol"].lower() or q_lower in s["name"].lower())
+        and s not in prefix_matches
+    ]
+
+    # --- 3. Combine, prefix results first ---
+    results = prefix_matches + substring_matches
+    return results[:20]  # limit to 20
 
 # ✅ NEW: Full list for dropdown autocomplete
 @router.get("/scripts")
 def list_scripts():
     return SCRIPTS[:1000]  # Or adjust limit as needed
+

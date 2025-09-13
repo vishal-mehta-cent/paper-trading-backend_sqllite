@@ -30,6 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.base import JobLookupError
 from pytz import timezone # 👈 Make sure this is exposed in orders.py
+from app.routers.users import router as users_router
 
 # Create app instance
 app = FastAPI(
@@ -80,6 +81,7 @@ app.include_router(google_auth_router)
 app.include_router(funds_router)
 app.include_router(feedback.router)
 app.include_router(orders.router)
+app.include_router(users_router)
 
 # 6) Scheduler setup (🕒 Run every weekday at 3:45 PM IST)
 #scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
