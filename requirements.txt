@@ -13,4 +13,5 @@ pytz
 apscheduler
 python-dotenv>=1.0
 kiteconnect
+fastapi_utils
 
