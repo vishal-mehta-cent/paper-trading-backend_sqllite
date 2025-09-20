@@ -11,4 +11,5 @@ requests
 yfinance
 pytz
 apscheduler
+python-dotenv>=1.0
 
