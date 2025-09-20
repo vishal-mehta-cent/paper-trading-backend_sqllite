@@ -4,6 +4,13 @@
 import os
 import sys
 import logging
+from pathlib import Path
+from dotenv import load_dotenv
+
+# --- Load env variables from backend/.env ---
+env_path = Path(__file__).resolve().parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
 
 # 0) Ensure Backend/ is on sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

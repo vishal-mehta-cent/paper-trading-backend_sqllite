@@ -1,22 +1,19 @@
 # backend/app/routers/portfolio.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 import sqlite3
 from typing import Dict, Any
 from datetime import datetime
 import requests
+import pandas as pd
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 DB_PATH = "paper_trading.db"
-QUOTES_API = "http://127.0.0.1:8000/quotes?symbols="  # quotes endpoint
+QUOTES_API = "http://127.0.0.1:8000/quotes?symbols="
 
 
 # ---------- DB helpers ----------
 def _ensure_portfolio_schema(conn: sqlite3.Connection) -> None:
-    """
-    Make sure table 'portfolio' exists and has the columns we use.
-    We do NOT change your data model; just ensure columns exist.
-    """
     c = conn.cursor()
     c.execute(
         """
@@ -31,7 +28,6 @@ def _ensure_portfolio_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    # Add missing columns if an older table exists
     c.execute("PRAGMA table_info(portfolio)")
     cols = {row[1].lower() for row in c.fetchall()}
     if "current_price" not in cols:
@@ -57,40 +53,16 @@ def _get_live_price(symbol: str) -> float:
 # ---------- API ----------
 @router.get("/{username}")
 def get_portfolio(username: str) -> Dict[str, Any]:
-    """
-    Returns:
-      {
-        "funds": <float>,
-        "open": [
-          {
-            "symbol": "ABC",
-            "qty": 10,
-            "avg_price": 50.0,
-            "current_price": 54.0,
-            "pnl": 4.0 * 10,          # (kept if you already used it)
-            "datetime": "...",
-            # NEW per your formulas:
-            "script_pnl": 4.0,         # live - entry_price  (₹/share)
-            "abs": 0.0800,             # (live - entry)/entry
-            "abs_pct": 8.00            # abs * 100
-          }
-        ],
-        "closed": []
-      }
-    """
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
-
             _ensure_portfolio_schema(conn)
 
-            # Funds (kept)
             c.execute("SELECT funds FROM users WHERE username=?", (username,))
             row_user = c.fetchone()
             funds = float(row_user["funds"]) if row_user else 0.0
 
-            # Current open holdings
             c.execute(
                 """
                 SELECT id, script, qty, avg_buy_price, current_price, updated_at, datetime
@@ -101,9 +73,7 @@ def get_portfolio(username: str) -> Dict[str, Any]:
             )
             rows = c.fetchall()
 
-            open_positions = []
-            to_update = []
-
+            open_positions, to_update = [], []
             for r in rows:
                 symbol = (r["script"] or "").upper()
                 qty = int(r["qty"] or 0)
@@ -111,18 +81,11 @@ def get_portfolio(username: str) -> Dict[str, Any]:
 
                 live = _get_live_price(symbol)
                 if live <= 0:
-                    # fall back to stored current_price or entry
                     live = float(r["current_price"] or 0.0) or entry_price
 
-                # Keep your old "pnl" field if frontend uses it elsewhere:
                 pnl_total = (live - entry_price) * qty
-
-                # === New fields using YOUR formulas ===
-                # script_pnl: per-share (₹)
                 script_pnl = live - entry_price
-                # abs: (live - entry)/entry (ratio)
                 abs_ratio = (script_pnl / entry_price) if entry_price else 0.0
-                # abs_pct: percentage
                 abs_pct = abs_ratio * 100.0
 
                 open_positions.append(
@@ -131,12 +94,11 @@ def get_portfolio(username: str) -> Dict[str, Any]:
                         "qty": qty,
                         "avg_price": round(entry_price, 2),
                         "current_price": round(live, 2),
-                        "pnl": round(pnl_total, 2),              # kept
+                        "pnl": round(pnl_total, 2),
                         "datetime": r["datetime"],
-                        # Provided fields for the Portfolio/Positions UI:
-                        "script_pnl": round(script_pnl, 2),      # ₹/share
-                        "abs": round(abs_ratio, 4),              # ratio
-                        "abs_pct": round(abs_pct, 2),            # %
+                        "script_pnl": round(script_pnl, 2),
+                        "abs": round(abs_ratio, 4),
+                        "abs_pct": round(abs_pct, 2),
                     }
                 )
 
@@ -152,19 +114,72 @@ def get_portfolio(username: str) -> Dict[str, Any]:
                 conn.commit()
 
             return {"funds": funds, "open": open_positions, "closed": []}
-
     except Exception as e:
         print("⚠️ Error in /portfolio:", e)
         raise HTTPException(status_code=500, detail="Server error in /portfolio")
 
 
+@router.post("/{username}/upload")
+async def upload_portfolio(username: str, file: UploadFile = File(...)):
+    """
+    Accept .xlsx upload and APPEND rows.
+    """
+    try:
+        df = pd.read_excel(file.file)
+        df.columns = [c.strip().lower() for c in df.columns]
+
+        # Normalize headers
+        if "avg price" in df.columns:
+            df = df.rename(columns={"avg price": "avg_price"})
+
+        required = {"symbol", "qty", "avg_price"}
+        if not required.issubset(set(df.columns)):
+            raise HTTPException(
+                status_code=400,
+                detail="Excel must have columns: symbol, qty, avg_price",
+            )
+
+        rows_to_insert, now = [], datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        for _, r in df.iterrows():
+            symbol = str(r.get("symbol", "")).upper().strip()
+            qty = int(r.get("qty", 0) or 0)
+            avg_price = float(r.get("avg_price", 0) or 0.0)
+            if not symbol or qty <= 0 or avg_price <= 0:
+                continue
+
+            rows_to_insert.append(
+                (username, symbol, qty, avg_price, avg_price, now)
+            )
+
+        if not rows_to_insert:
+            raise HTTPException(status_code=400, detail="No valid rows to insert")
+
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            _ensure_portfolio_schema(conn)
+            c = conn.cursor()
+            c.executemany(
+                """
+                INSERT INTO portfolio (username, script, qty, avg_buy_price, current_price, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                rows_to_insert,
+            )
+            conn.commit()
+
+        return {"rows": len(rows_to_insert)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("❌ Upload error:", e)
+        raise HTTPException(status_code=500, detail="Upload failed")
+
+
 @router.post("/{username}/cancel/{symbol}")
 def cancel_position(username: str, symbol: str):
-    """Optional helper you already had — left as-is."""
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             c = conn.cursor()
-
             c.execute(
                 "SELECT qty, avg_buy_price FROM portfolio WHERE username=? AND script=?",
                 (username, symbol),
@@ -184,10 +199,8 @@ def cancel_position(username: str, symbol: str):
                 "UPDATE users SET funds = funds + ? WHERE username=?",
                 (refund, username),
             )
-
             conn.commit()
             return {"success": True, "refund": refund}
-
     except Exception as e:
         print("❌ Cancel error:", e)
         raise HTTPException(status_code=500, detail="Server error in cancel")
